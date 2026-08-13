@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Frontend App</title>
+</head>
+<body>
+    <h1>Hello from DevOps!</h1>
+    <p>This application was built using Jenkins and Docker.</p>
+</body>
+</html>
