@@ -1,8 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        label 'worker'
+    }
 
     environment {
-        IMAGE_NAME = "yourdockerhubusername/my-frontend-app"
+        IMAGE_NAME = "kavyakeerthid/my-frontend-app"
         IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
@@ -10,7 +12,8 @@ pipeline {
 
         stage('Clone Repository') {
             steps {
-                git 'https://github.com/yourname/my-frontend-app.git'
+                git branch: 'main',
+                    url: 'https://github.com/lskavyakeerthi/august.git'
             }
         }
 
@@ -48,6 +51,15 @@ pipeline {
                     docker push ${IMAGE_NAME}:latest
                 '''
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'Docker image pushed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
         }
     }
 }
