@@ -25,7 +25,10 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "=============================================="
+                    echo "Building Docker image"
+                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "=============================================="
 
                     docker build \
                         -t ${IMAGE_NAME}:${IMAGE_TAG} .
@@ -58,7 +61,10 @@ pipeline {
         stage('Push Image') {
             steps {
                 sh '''
-                    echo "Pushing image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "=============================================="
+                    echo "Pushing Docker image"
+                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "=============================================="
 
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
@@ -70,7 +76,10 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
-                    echo "Deploying image ${IMAGE_NAME}:${IMAGE_TAG} to Kubernetes"
+                    echo "=============================================="
+                    echo "Deploying to Kubernetes"
+                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "=============================================="
 
                     ssh -i ${SSH_KEY} \
                         -o StrictHostKeyChecking=no \
@@ -85,7 +94,9 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 sh '''
-                    echo "Checking Kubernetes rollout..."
+                    echo "=============================================="
+                    echo "Checking Kubernetes rollout"
+                    echo "=============================================="
 
                     ssh -i ${SSH_KEY} \
                         -o StrictHostKeyChecking=no \
@@ -100,13 +111,17 @@ pipeline {
         stage('Verify Image') {
             steps {
                 sh '''
-                    echo "Checking deployed image..."
+                    echo "=============================================="
+                    echo "Checking deployed image"
+                    echo "=============================================="
 
                     ssh -i ${SSH_KEY} \
                         -o StrictHostKeyChecking=no \
                         ubuntu@${K8S_HOST} \
                         "kubectl get deployment my-frontend-mydeploy \
-                        -o=jsonpath='{.spec.template.spec.containers[0].image}{\"\\\\n\"}'"
+                        -o=jsonpath='{.spec.template.spec.containers[0].image}'"
+
+                    echo ""
                 '''
             }
         }
@@ -115,6 +130,7 @@ pipeline {
     post {
         success {
             echo '=============================================='
+            echo 'SUCCESS!'
             echo 'Docker image pushed successfully!'
             echo 'Kubernetes deployment completed successfully!'
             echo '=============================================='
@@ -122,7 +138,7 @@ pipeline {
 
         failure {
             echo '=============================================='
-            echo 'Pipeline failed!'
+            echo 'PIPELINE FAILED!'
             echo 'Check the failed stage in Console Output.'
             echo '=============================================='
         }
