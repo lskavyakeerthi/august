@@ -6,6 +6,11 @@ pipeline {
     environment {
         IMAGE_NAME = "kavyakeerthid/my-frontend-app"
         IMAGE_TAG = "${BUILD_NUMBER}"
+
+        K8S_HOST = "172.31.11.157"
+        HELM_RELEASE = "my-frontend"
+        HELM_CHART = "/home/ubuntu/my-frontend-chart"
+        SSH_KEY = "/home/ubuntu/.ssh/k8s_deploy_key"
     }
 
     stages {
@@ -20,8 +25,14 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                    docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest
+                    echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+
+                    docker build \
+                        -t ${IMAGE_NAME}:${IMAGE_TAG} .
+
+                    docker tag \
+                        ${IMAGE_NAME}:${IMAGE_TAG} \
+                        ${IMAGE_NAME}:latest
                 '''
             }
         }
@@ -37,8 +48,8 @@ pipeline {
                 ]) {
                     sh '''
                         echo "$DOCKER_PASSWORD" | docker login \
-                        -u "$DOCKER_USERNAME" \
-                        --password-stdin
+                            -u "$DOCKER_USERNAME" \
+                            --password-stdin
                     '''
                 }
             }
@@ -47,8 +58,55 @@ pipeline {
         stage('Push Image') {
             steps {
                 sh '''
+                    echo "Pushing image: ${IMAGE_NAME}:${IMAGE_TAG}"
+
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
+
                     docker push ${IMAGE_NAME}:latest
+                '''
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                    echo "Deploying image ${IMAGE_NAME}:${IMAGE_TAG} to Kubernetes"
+
+                    ssh -i ${SSH_KEY} \
+                        -o StrictHostKeyChecking=no \
+                        ubuntu@${K8S_HOST} \
+                        "helm upgrade --install ${HELM_RELEASE} ${HELM_CHART} \
+                        --set image.repository=${IMAGE_NAME} \
+                        --set image.tag=${IMAGE_TAG}"
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                    echo "Checking Kubernetes rollout..."
+
+                    ssh -i ${SSH_KEY} \
+                        -o StrictHostKeyChecking=no \
+                        ubuntu@${K8S_HOST} \
+                        "kubectl rollout status \
+                        deployment/my-frontend-mydeploy \
+                        --timeout=180s"
+                '''
+            }
+        }
+
+        stage('Verify Image') {
+            steps {
+                sh '''
+                    echo "Checking deployed image..."
+
+                    ssh -i ${SSH_KEY} \
+                        -o StrictHostKeyChecking=no \
+                        ubuntu@${K8S_HOST} \
+                        "kubectl get deployment my-frontend-mydeploy \
+                        -o=jsonpath='{.spec.template.spec.containers[0].image}{\"\\\\n\"}'"
                 '''
             }
         }
@@ -56,10 +114,17 @@ pipeline {
 
     post {
         success {
+            echo '=============================================='
             echo 'Docker image pushed successfully!'
+            echo 'Kubernetes deployment completed successfully!'
+            echo '=============================================='
         }
+
         failure {
+            echo '=============================================='
             echo 'Pipeline failed!'
+            echo 'Check the failed stage in Console Output.'
+            echo '=============================================='
         }
     }
 }
