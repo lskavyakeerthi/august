@@ -17,6 +17,10 @@ pipeline {
 
         stage('Clone Repository') {
             steps {
+                echo '=============================================='
+                echo 'Cloning GitHub Repository'
+                echo '=============================================='
+
                 git branch: 'master',
                     url: 'https://github.com/lskavyakeerthi/august.git'
             }
@@ -26,7 +30,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=============================================="
-                    echo "Building Docker image"
+                    echo "Building Docker Image"
                     echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
                     echo "=============================================="
 
@@ -40,8 +44,51 @@ pipeline {
             }
         }
 
+        stage('BVT Test') {
+            steps {
+                sh '''
+                    echo "=============================================="
+                    echo "Running BVT Test"
+                    echo "=============================================="
+
+                    echo "Starting test container..."
+
+                    docker run -d \
+                        --name bvt-${BUILD_NUMBER} \
+                        -p 8080:80 \
+                        ${IMAGE_NAME}:${IMAGE_TAG}
+
+                    echo "Waiting for application to start..."
+                    sleep 5
+
+                    echo "Checking application availability..."
+
+                    curl -f http://localhost:8080/
+
+                    echo "=============================================="
+                    echo "BVT PASSED"
+                    echo "Application is up and responding"
+                    echo "=============================================="
+                '''
+            }
+
+            post {
+                always {
+                    sh '''
+                        echo "Cleaning BVT container..."
+
+                        docker rm -f bvt-${BUILD_NUMBER} 2>/dev/null || true
+                    '''
+                }
+            }
+        }
+
         stage('Docker Login') {
             steps {
+                echo '=============================================='
+                echo 'Docker Hub Login'
+                echo '=============================================='
+
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'dockerhub-credentials',
@@ -62,13 +109,18 @@ pipeline {
             steps {
                 sh '''
                     echo "=============================================="
-                    echo "Pushing Docker image"
-                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Pushing Docker Image"
                     echo "=============================================="
+
+                    echo "Pushing ${IMAGE_NAME}:${IMAGE_TAG}"
 
                     docker push ${IMAGE_NAME}:${IMAGE_TAG}
 
+                    echo "Pushing ${IMAGE_NAME}:latest"
+
                     docker push ${IMAGE_NAME}:latest
+
+                    echo "Docker image pushed successfully!"
                 '''
             }
         }
@@ -77,9 +129,10 @@ pipeline {
             steps {
                 sh '''
                     echo "=============================================="
-                    echo "Deploying to Kubernetes"
-                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Deploying to Kubernetes using Helm"
                     echo "=============================================="
+
+                    echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
 
                     ssh -i ${SSH_KEY} \
                         -o StrictHostKeyChecking=no \
@@ -95,7 +148,7 @@ pipeline {
             steps {
                 sh '''
                     echo "=============================================="
-                    echo "Checking Kubernetes rollout"
+                    echo "Checking Kubernetes Rollout"
                     echo "=============================================="
 
                     ssh -i ${SSH_KEY} \
@@ -104,6 +157,8 @@ pipeline {
                         "kubectl rollout status \
                         deployment/my-frontend-mydeploy \
                         --timeout=180s"
+
+                    echo "Kubernetes rollout successful!"
                 '''
             }
         }
@@ -112,16 +167,27 @@ pipeline {
             steps {
                 sh '''
                     echo "=============================================="
-                    echo "Checking deployed image"
+                    echo "Verifying Deployed Image"
                     echo "=============================================="
 
-                    ssh -i ${SSH_KEY} \
+                    DEPLOYED_IMAGE=$(ssh -i ${SSH_KEY} \
                         -o StrictHostKeyChecking=no \
                         ubuntu@${K8S_HOST} \
                         "kubectl get deployment my-frontend-mydeploy \
-                        -o=jsonpath='{.spec.template.spec.containers[0].image}'"
+                        -o=jsonpath='{.spec.template.spec.containers[0].image}'")
 
-                    echo ""
+                    echo "Expected Image:"
+                    echo "${IMAGE_NAME}:${IMAGE_TAG}"
+
+                    echo "Deployed Image:"
+                    echo "${DEPLOYED_IMAGE}"
+
+                    if [ "${DEPLOYED_IMAGE}" != "${IMAGE_NAME}:${IMAGE_TAG}" ]; then
+                        echo "ERROR: Image verification failed!"
+                        exit 1
+                    fi
+
+                    echo "Image verification PASSED!"
                 '''
             }
         }
@@ -130,15 +196,21 @@ pipeline {
     post {
         success {
             echo '=============================================='
-            echo 'SUCCESS!'
-            echo 'Docker image pushed successfully!'
-            echo 'Kubernetes deployment completed successfully!'
+            echo '           PIPELINE SUCCESSFUL               '
+            echo '=============================================='
+            echo 'Docker build       : PASSED'
+            echo 'BVT                : PASSED'
+            echo 'Docker push        : PASSED'
+            echo 'Helm deployment    : PASSED'
+            echo 'K8s rollout        : PASSED'
+            echo 'Image verification : PASSED'
             echo '=============================================='
         }
 
         failure {
             echo '=============================================='
-            echo 'PIPELINE FAILED!'
+            echo '             PIPELINE FAILED                 '
+            echo '=============================================='
             echo 'Check the failed stage in Console Output.'
             echo '=============================================='
         }
